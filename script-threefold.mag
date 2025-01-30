@@ -1,0 +1,546 @@
+load "k3pic.mag";
+// based on Coinc4.txt
+Qt<t> := FunctionField(Q);
+legendre := EllipticCurve([0,-t-1,0,t,0]);
+
+// set up the fibre of the family over P^4 (a shortened version of your code)
+function es1(t1,t2,t3)
+  "defining the shtuka matrix";
+  Qt := FunctionField(FieldOfFractions(Universe([t1,t2,t3])));
+  Qt1 := PolynomialRing(Qt);
+  f := &*[Qt1.1-i: i in [t1,t2,t3,Qt.1]];
+  Qt5 := PolynomialRing(Qt,5);
+  Qt51 := PolynomialRing(Qt5,1);
+  // this is not the same convention as I used in zr.mag, but it doesn't matter
+  mat := Matrix(2,2,[Polynomial(i): i in [[Qt5.1,Qt5.2,1],[-Qt5.3,Qt5.3],[0,1],[Qt5.4,Qt5.5,1]]]);
+  coefs := Coefficients(Determinant(mat)-f);
+
+  "defining the curve given by a suitable determinant";
+  A5 := Spec(Qt5);
+  c := Curve(A5,coefs);
+  cbar := ProjectiveClosure(c);
+  assert IsSingular(cbar![0,0,1,0,0,0]) and ArithmeticGenus(cbar) eq 2;
+  // e,eto := EllipticCurve(cbar,SingularPoints(cbar)[1]);
+  // e,eto := EllipticCurve(cbar,cbar![0,0,1,0,0,0]);
+  P4 := ProjectiveSpace(Qt,4);
+  "projecting away from the singular point";
+  to4 := map<cbar->P4|[cbar.i: i in Remove([1..6],3)]>;
+  c4 := Image(to4);
+  to4 := map<cbar->c4|[cbar.i: i in Remove([1..6],3)]>;
+  // maybe we don't care about the map
+  rl := RemoveLinearRelations(c4);
+  assert #RationalPoints(Scheme(rl,rl.4)) eq 4;
+  "projecting away from a smooth point to get a plane cubic";
+  P2 := ProjectiveSpace(BaseField(rl),2);
+  to2 := map<rl->P2|[rl.i: i in [2..4]]>;
+  cub := Image(to2);
+  e := Jacobian(GenusOneModel(Curve(rl)));
+  return e, cub;
+end function;
+
+// make the fibre product of two elliptic surfaces in P^2 x P^1
+function fp(e1,e2)
+  Ft := BaseField(e1);
+  F := BaseField(Ft);
+  P221 := ProductProjectiveSpace(F,[2,2,1]);
+  hs := [hom<CoordinateRing(AmbientSpace(e1))->c|hom<Ft->c|c.7/c.8>,[c.i: i in [j..j+2]]>: j in [1,4]] where c is FieldOfFractions(CoordinateRing(P221));
+  sch := Scheme(P221,[Numerator(hs[1](DefiningPolynomial(e1))),Numerator(hs[2](DefiningPolynomial(e2)))]);
+  return sch;
+end function;
+
+function find_constant(a,b,c:leg := legendre)
+  "finding the general fibre and its minimal model";
+  e,cub := es1(a,b,c);
+  Qt := BaseField(e);
+  leg := BaseChange(leg,hom<BaseField(leg)->Qt|Qt.1>);
+  fld := BaseField(Qt);
+  "noticing that the total space is already a rational surface";
+  assert forall{c: c in Coefficients(DefiningPolynomial(cub))|Degree(Numerator(c)) le 1 and Degree(Denominator(c)) eq 0};
+  P2 := ProjectiveSpace(fld,2);
+  /*P21 := ProductProjectiveSpace(fld,[2,1]);
+  h := hom<CoordinateRing(AmbientSpace(cub))->c|hom<Qt->c|c.4/c.5>,[c.1,c.2,c.3]> where c is FieldOfFractions(CoordinateRing(P21));
+
+  in21 := Surface(P21,Numerator(h(DefiningPolynomial(cub))));
+  in5,to5 := SegreEmbedding(in21);
+  // now let's make it rational.
+  printf "mapping to P^5 ";
+  P5 := AmbientSpace(in5);
+  P3 := ProjectiveSpace(fld,3);
+  printf "to P^3 ";
+  to3 := map<in5->P3|[P5.i: i in [2,4,5,6]]>;
+  in3 := Image(to3);
+  to3 := map<in5->in3|[P5.i: i in [2,4,5,6]]>;
+  // now the obvious thing to do is to project away from the singular point.
+  to2 := map<in3->P2|[P3.i: i in [1,2,4]]>;
+  assert IsInvertible(to2);
+  dirto42 := to3*to2;
+  fibs := [to5(Scheme(in21,P21.4-i*P21.5)): i in [5..10]];
+  f42 := [dirto42(i): i in fibs];*/
+  // The new approach is to preserve the symmetry and match this with
+  // the fibration (y:x0z0x1z1x2z2) on the quotient threefold.
+  f42 := [Curve(P2,DefiningPolynomial(BaseChange(cub,hom<Qt->fld|i>))): i in [5..10]];
+  dp := [DefiningPolynomial(i): i in f42];
+  ls3 := LinearSystem(P2,dp);
+  assert #Sections(ls3) eq 2 and Degree(ls3.1) eq 3;
+  "moving the singular fibres to more appropriate places";
+  P1 := ProjectiveSpace(fld,1);
+  to1 := map<P2->P1|[dp[1],dp[2]]>;
+  tr2 := TranslationOfSimplex(P1,[P1(fld)|[i]: i in [5..7]]);
+  tr1 := TranslationOfSimplex(P1,[RationalPoints(to1(i))[1]: i in f42[1..3]]);
+  to1 := to1*tr1^-1*tr2;
+  P2t := ProjectiveSpace(Qt,2);
+  P1t := ProjectiveSpace(Qt,1);
+  to1t := map<P2t->P1t|DefiningPolynomials(to1)>;
+  gft := Curve((P1t![Qt.1,1])@@to1t);
+  jac := Jacobian(GenusOneModel(gft)); // not used
+
+  // See the end of the file for code that makes parametrizations from pairs
+  // of disjoint lines.  Namely, we blow down the first one (use quadratic
+  // forms vanishing on a residual) and then project away from the image
+  // of the second one.
+  "writing down the Calabi-Yau product in P^2 x P^2 x P^1.";
+  cy := fp(gft,leg);
+  P221 := AmbientSpace(cy);
+  // which has the big advantage of actually being defined by equations of
+  // tridegree (3,0,1), (0,3,1), so it looks like a Calabi-Yau.
+
+  "finding a quintic model in P^4";
+  sscy := SingularSubscheme(cy);
+
+  "writing down singular components and (1,1,1)-forms that vanish on them";
+  ls111 := LinearSystem(P221,[1,1,1]);
+  pcss := {@x: x in PrimeComponents(Scheme(sscy,i)), i in [[p.4,p.6,p.8],[p.4,p.5,p.7],[p.4-p.6,p.5,p.7-p.8],[p.3,p.4-p.6,p.8],[p.3,p.4,p.8],[p.3,p.6,p.8]]|Dimension(x) eq 1@} where p is P221;
+  assert #pcss eq 12 and forall{i: i in pcss|Dimension(i meet sscy) eq 1};
+  // pcss := PrimeComponents(sscy);
+  for i in pcss do ls111 := LinearSystem(ls111,i); end for;
+  "mapping to P^4 and finding the image";
+  P4 := ProjectiveSpace(fld,4);
+  to4 := map<cy->P4|Sections(ls111)>;
+  assert DefiningPolynomials(to4) eq [p.3*p.4*p.7-p.3*p.4*p.8,p.3*p.6*p.7-p.3*p.4*p.8,p.1*p.5*p.8,p.2*p.5*p.8,p.3*p.5*p.8] where p is P221;
+  in4 := Image(to4);
+  to4 := map<cy->in4|DefiningPolynomials(to4)>;
+
+  "finding singular components of the image";
+  ss4 := SingularSubscheme(in4);
+  // pcss4 := PrimeComponents(ss4);
+  pcss4 := {@Scheme(P4,Basis(x)): x in RadicalDecomposition(p), p in ProbableRadicalDecomposition(Ideal(Scheme(ss4,P4.i))), i in [1..5]@};
+  pcss4 := {@x: x in pcss4|forall{y: y in pcss4|x eq y or x meet y ne x}@};
+  assert {*Dimension(i): i in pcss4*} eq {*0^^7,1^^8*};
+  "finding planes that lie on the threefold";
+  pls := {@Scheme(P4,[x: x in DefiningPolynomials(&join s)|Degree(x) eq 1]): s in Subsets({r: r in pcss4|Dimension(r) eq 1 and Degree(r) eq 1},2)|not IsEmpty(&meet s)@};
+  pls := {@x: x in pls|x meet in4 eq x@};
+  assert #pls eq 5;
+  repeat
+    old_pls := pls;
+    pls join:= {@x: x in PrimeComponents(Scheme(in4,pol)), pol in DefiningPolynomials(p), p in pls|Dimension(x) eq 2 and Degree(x) eq 1@};
+  until pls eq old_pls;
+  assert #pls eq 9 and Scheme(P4,[P4.1,P4.3+P4.4+P4.5]) in pls;
+  // there are actually 3 more planes: P4.3-a*b*P4.5 = P4.4+(a+b)*P4.5, etc.
+  // that will be the correct fibration.
+  "writing down a K3 fibration and the general fibre in P^3";
+  possible_good := map<in4->P1|[P4.1,P4.3+P4.4+P4.5]>;
+
+  in4t := ChangeRing(in4,Qt);
+  pgt := map<in4t->P1t|DefiningPolynomials(possible_good)>;
+  gfpg := Difference((P1t![Qt.1,1])@@pgt,BaseScheme(pgt));
+  k3gf := RemoveLinearRelations(gfpg);
+  P3t := AmbientSpace(k3gf);
+  // assert Degree(SingularSubscheme(BaseChange(k3gf,hom<Qt->fld|13>))) eq 9;
+  "finding some of its singular points";
+  // sptsgf := RationalPoints(Scheme(SingularSubscheme(k3gf),k3gf.4));
+  // the following are respectively A3, A1, A4, A1
+  sptsgf := {@k3gf|[0,0,1,0],[Qt.1,0,1,0],[0,-1,1,0],[1,0,0,0]@};
+  assert forall{x: x in sptsgf|IsSingular(x)};
+  // Three of these are collinear, so we get 4 fibrations.  However,
+  // the fibrations we are looking for have four A3 fibres and are
+  // not among these.
+  // This fibration was found by mapping to P^6, writing down lots of curves
+  // along the way, and pulling back.  I wrote down lots of fibrations with
+  // the correct property and pulled back to P^3, looking for the simplest
+  // thing that I could interpolate.
+
+  // Although the fibration on the threefold is symmetric in a, b, c,
+  // this one isn't.  The reason for this is that in order to obtain an
+  // elliptic fibration on the toric side, we have to make a choice of
+  // projection to P^1 x P^1, and that means choosing two of a, b, c.
+
+  // The multiplication by Qt.1 puts the bad fibres in a better place.
+  // unfortunately this is too complicated to have an obvious generalization.
+  "writing a suitable genus-1 fibration";
+  myfib := map<k3gf->P1t|[p.1*p.2-a*b*p.1*p.4+Qt.1*(a+b-1)*p.2*p.4+Qt.1*a*b*p.3*p.4+Qt.1*a*b*p.4^2,Qt.1*(p.2^2+p.2*p.3-(a*b-a-b)*p.2*p.4)]> where p is k3gf;
+
+  "finding a cubic model for its general fibre";
+  Qtu := FunctionField(Qt);
+  k3gfu := ChangeRing(k3gf,Qtu);
+  P3tu := AmbientSpace(k3gfu);
+  sptsu := [k3gfu|Eltseq(i): i in sptsgf];
+  P1tu := ProjectiveSpace(Qtu,1);
+  myfibu := map<k3gfu->P1tu|DefiningPolynomials(myfib)>;
+  genfibu := Curve(Difference((P1tu![Qtu.1,1])@@myfibu,BaseScheme(myfibu)));
+  spts_gfu := [x: x in sptsu|x in genfibu and IsSingular(genfibu!x)];
+  assert ArithmeticGenus(genfibu) eq 2 and #spts_gfu eq 1;
+  P2tu := ProjectiveSpace(Qtu,2);
+  to2tu := map<genfibu->P2tu|DefiningPolynomials(Cluster(P3tu!spts_gfu[1]))>;
+  gf2u := Image(to2tu);
+  // also 0:0:1:0 is a section, so it is an elliptic curve.
+  assert IsNonsingular(genfibu![0,0,1,0]);
+  jacu := Jacobian(GenusOneModel(gf2u));
+  // by factoring the discriminant we see that the I4 fibres are at
+  // 0, t, t/c, and infinity.
+  
+  // now we will have to compare this to the toric one, since it is not
+  // just a Kummer this time around.
+  return jacu, cy, to4, in4, possible_good, k3gf, myfib;
+end function;
+
+// code for writing down the fibration on the toric side
+// note that when we count we have one more 0 and one fewer 2 because of
+// the fibre at infinity
+function toric_setup(a,b,c)
+  "defining the ambient toric variety";
+  fld := FieldOfFractions(Universe([a,b,c]));
+  fld7 := PolynomialRing(fld,7);
+  cr := CoxRing(fld7,[ideal<fld7|[fld7.1,fld7.i,fld7.(i+1)]>: i in [2,4,6]],[[2,1,1,0,0,0,0],[2,0,0,1,1,0,0],[2,0,0,0,0,1,1]],[]);
+  tor := ToricVariety(cr);
+  lfs := [[tor.2,(tor.2-tor.3),(tor.2-a*tor.3),tor.3],[tor.4,(tor.4-tor.5),(tor.4-b*tor.5),tor.5],[tor.6,(tor.6-tor.7),(tor.6-c*tor.7),tor.7]];
+  "writing down the quotient of E_1 x E_2 x E_3";
+  imsch := Scheme(tor,tor.1^2-&*(&cat lfs));
+  P111 := ProductProjectiveSpace(fld,[1,1,1]);
+  P1 := ProjectiveSpace(fld,1);
+  "defining a K3 surface fibration";
+  to1 := map<imsch->P1|[tor.1,&*[tor.i: i in [2..7]]]>;
+  // So a fibre is defined by y^2 = x0 z0 .... and y = c x0 z0 x1 z1 x2 z2.
+  // When we substitute, we cancel out the x0 z0 x1 z1 x2 z2, and what's left
+  // is c (x0 z0 x1 z1 x2 z2) = (x0 - z0)(x0 - az0) ... etc., which is
+  // visibly a (2,2,2)-surface in (P^1)^3 (and which generalizes immediately
+  // to higher dimensions).
+  Qt := FunctionField(fld);
+  Qtu := FunctionField(Qt);
+  Qtu7 := PolynomialRing(Qtu,7);
+  crtu := CoxRing(Qtu7,[ideal<Qtu7|[Qtu7.1,Qtu7.i,Qtu7.(i+1)]>: i in [2,4,6]],[[2,1,1,0,0,0,0],[2,0,0,1,1,0,0],[2,0,0,0,0,1,1]],[]);
+  tortu := ToricVariety(crtu);
+  imtu := Scheme(tortu,DefiningPolynomial(imsch));
+  P111tu := ProductProjectiveSpace(Qtu,[1,1,1]);
+  // we put the Qt.1 where we do to match up with the other one
+  "writing down the fibre in (P^1)^3";
+  ei := EliminationIdeal(Ideal(Scheme(imtu,Qt.1*Qtu7.1-&*[Qtu7.i: i in [2..7]])),{2..7});
+  k3_111 := Surface(P111tu,Evaluate(Numerator(Basis(ei)[1]/&*[tortu.i: i in [2..7]]),[0] cat [P111tu.i: i in [1..6]]));
+
+  "writing down a suitable fibration on the general fibre";
+  P11tu := ProductProjectiveSpace(Qtu,[1,1]);
+  P1tu := ProjectiveSpace(Qtu,1);
+  // above we singled out c.  So we do the same here.
+  // We use the order 6, 5 to make the locations of bad fibres match.
+  fibk3 := map<k3_111->P1tu|[P111tu.6,P111tu.5]>;
+  gf := (P1tu![Qtu.1,1])@@fibk3;
+  gf_11 := Image(map<gf->P11tu|[gf.i: i in [1..4]]>);
+  assert IsNonsingular(gf_11![0,1,1,1]);
+  // so it is again an elliptic curve.
+  "computing the Weierstrass model";
+  jac := Jacobian(GenusOneModel(Curve(SegreEmbedding(gf_11))));
+  return jac, tor, imsch;
+end function;
+
+// yes, this really is much easier.
+procedure test()
+  "--- step 1: working out the fibration on the product threefold ---";
+  cp1 := Cputime();
+  Q3 := FunctionField(Q,3);
+  jacu := find_constant(Q3.1,Q3.2,Q3.3);
+  "time for this step:", Cputime(cp1);
+  "--- step 2: working out the fibration on the quotient threefold ---";
+  cp2 := Cputime();
+  jac := toric_setup(Q3.1,Q3.2,Q3.3);
+  "time for this step:", Cputime(cp2);
+  "--- step 3: confirming that they are isomorphic ---";
+  cp3 := Cputime();
+  assert IsIsomorphic(jacu,jac);
+  "time for this step:", Cputime(cp3);
+  "total time:", Cputime(cp1); // 17 seconds
+  return;
+end procedure;
+
+// now let's make an actual birational equivalence.
+function bir_eq(a,b,c)
+  "setting up on the product side";
+  Q3 := FieldOfFractions(Universe([a,b,c]));
+  // we find the constant fibration.  As a fibration on the quintic threefold
+  // in4 it is given by possible_good, with generic fibre k3gf.  The
+  // elliptic fibration on k3gf is called myfib.
+  jacu, cy, to4, in4, possible_good, k3gf, myfib := find_constant(a,b,c);
+  // we will need to work over the function field of Q3 and also the
+  // function field in two variables, since we consider the threefold as
+  // an elliptic threefold over a rational surface.
+  P4 := AmbientSpace(in4);
+  Q32 := FunctionField(Q3,2);
+  Q31 := FunctionField(Q3);
+  P1t := ProjectiveSpace(Q31,1);
+  "finding the generic fibre of the fibration on the quintic threefold";
+  in4t := ChangeRing(in4,Q31);
+  pgt := map<in4t->P1t|DefiningPolynomials(possible_good)>;
+  gfpg := Difference((P1t![Q31.1,1])@@pgt,BaseScheme(pgt));
+  "giving it as a quartic in P^3";
+  k3gf,tok3gf := RemoveLinearRelations(gfpg);
+  _,fromk3gf := IsInvertible(tok3gf);
+  myfib := map<k3gf->P1t|DefiningPolynomials(myfib)>;
+  tok3gf := map<gfpg->k3gf|DefiningPolynomials(tok3gf)>;
+  myf_gf := tok3gf*myfib;
+
+  "finding the generic fibre and making it an elliptic curve";
+  in42 := ChangeRing(in4,Q32);
+  P112 := ProductProjectiveSpace(Q32,[1,1]);
+  // here we make the elliptic fibration on the quintic explicit
+  // by giving a map to P^1 x P^1, where the first map to P^1 is the
+  // K3 fibration and the second is the elliptic fibration on each K3.
+  to112 := map<in42->P112|dp cat [&+[Evaluate(MonomialCoefficient(e,m),dp[1]/dp[2])*CoordinateRing(P4)!m: m in Monomials(e)]: e in DefiningPolynomials(myf_gf)]> where dp is DefiningPolynomials(possible_good);
+  // and here we find the generic fibre (that is, the fibre above the generic
+  // point of P^1 x P^1, which is the generic elliptic fibre on the generic
+  // K3 fibre).
+  prgf := Difference((P112![Q32.1,1,Q32.2,1])@@to112,BaseScheme(to112));
+  // it comes to us as a curve of arithmetic genus 2, so we have to project
+  // away from the singularity to get a plane cubic.
+  rlpr,torlpr := RemoveLinearRelations(prgf);
+  assert IsSingular(rlpr![0,-1,1,0]);
+  prgf2,to2 := Projection(rlpr,rlpr![0,-1,1,0]);
+  prgf2 := Curve(prgf2);
+  to2 := map<rlpr->prgf2|DefiningPolynomials(to2)>;
+  // Since we know a rational point, Magma can give us an explicit isomorphism
+  // to an elliptic curve in Weierstrass form.
+  ec1,ec1to := EllipticCurve(prgf2,prgf2![0,1,0]);
+
+  "setting up on the quotient side";
+  // and on the other side ....
+  jac, tor, imsch := toric_setup(a,b,c);
+  imsch2 := BaseChange(imsch,hom<Q3->Q32|[a,b,c]>);
+  // I don't remember why we flip the first fibration too but it works
+
+  "finding the generic fibre and making it an elliptic curve";
+  // again, we write a map from the toric quotient to P^1 x P^1.
+  torto112 := map<imsch2->P112|[&*[tor.i: i in [2..7]],tor.1,tor.7,tor.6]>;
+  torgf := Difference((P112![Q32.1,1,Q32.2,1])@@torto112,BaseScheme(torto112));
+  // the base scheme of this map is rather large.  However, the polynomial
+  // in the next line is the one that characterizes the fibre we want.
+  torgf := Scheme(imsch2,Basis(rep{x: x in PrimaryDecomposition(Ideal(torgf))|imsch2.1-1/(Q32.1*Q32.2)*&*[imsch2.i: i in [2,3,4,5,7,7]] in Basis(x)}));
+  // the fibration is given by the projection onto the first two copies of P^1.
+  gf112 := Image(map<torgf->P112|[torgf.i: i in [2..5]]>);
+  // this time the curve is of bidegree (2,2) in P^1 x P^1, so we don't have
+  // to do much.
+  togf112 := map<torgf->gf112|[torgf.i: i in [2..5]]>;
+  seg,segto := SegreEmbedding(Curve(gf112));
+  prseg,prto := Projection(seg,seg![0,1,0,1]);
+  prseg := Curve(prseg); prto := map<seg->prseg|DefiningPolynomials(prto)>;
+  // again, we have a genus 1 curve with an explicit rational point.
+  ec2,ec2to := EllipticCurve(prseg,prseg![1,0,1]);
+
+  "making Weierstrass models and checking the isomorphism";
+  w1,tow1 := WeierstrassModel(ec1);
+  w2,tow2 := WeierstrassModel(ec2);
+  // Magma can do this by itself, but I thought I would give it a hint
+  rat := (a1[4]*a2[5])/(a2[4]*a1[5]) where a1 is aInvariants(w1) where a2 is aInvariants(w2);
+  _,sqrat := IsSquare(rat);
+  match := map<w1->w2|[sqrat^2*w1.1,sqrat^3*w1.2,w1.3],[w2.1/sqrat^2,w2.2/sqrat^3,w2.3]>;
+
+  "spreading out the maps to get a map from the toric to the Weierstrass";
+  // we now have two isomorphic elliptic curves over the function field in
+  // two variables, together with invertible maps from the respective generic
+  // fibres to them.  So we start by mapping the quotient threefold to the
+  // total space of the family.
+  P1111 := ProductProjectiveSpace(Q3,[1,1,1,1]);
+  // my usual code snippet for spreading out something over a function field,
+  // but now with two variables
+  h11 := hom<CoordinateRing(P112)->c|hom<Q32->c|c.5/c.6,c.7/c.8>,[c.i: i in [1..4]]> where c is FieldOfFractions(CoordinateRing(P1111));
+  in1111 := Scheme(P1111,Numerator(h11(DefiningPolynomial(gf112))));
+  // the first four coordinates are the same, then we use the fibrations
+  to1111 := map<imsch->in1111|[tor.i: i in [2..5]] cat [CoordinateRing(tor)!i: i in DefiningPolynomials(torto112)]>;
+
+  // similarly we spread out the Weierstrass model.
+  P211 := ProductProjectiveSpace(Q3,[2,1,1]);
+  h2 := hom<CoordinateRing(AmbientSpace(w2))->c|hom<Q32->c|c.4/c.5,c.6/c.7>,[c.i: i in [1..3]]> where c is FieldOfFractions(CoordinateRing(P211));
+  w211 := Scheme(P211,Numerator(h2(DefiningPolynomial(w2))));
+  // and now we make the map from the fibre in P^1 x P^1 to the Weierstrass
+  // model and spread out the equations, so that it becomes a map from the
+  // one total space to the other.
+  spetow := &*[segto,prto,ec2to,tow2];
+  tow211 := map<in1111->w211|[h11(i): i in DefiningPolynomials(spetow)] cat [P1111.i: i in [5..8]]>;
+  im_to_w211 := to1111*tow211;
+  // at this point we have a map from the quotient to the spread-out elliptic
+  // curve over the function field in two variables, and everything along the
+  // way was invertible.  Now we find a map from the quintic; we already
+  // know how to get there from the fibre product Z^4 x_{P_1} Legendre.
+  
+  "spreading out the maps to get a map from the quintic to the Weierstrass";
+  // as before, we make the map from the two fibrations
+  P411 := ProductProjectiveSpace(Q3,[4,1,1]);
+  h4 := hom<CoordinateRing(AmbientSpace(in42))->c|hom<Q32->c|c.6/c.7,c.8/c.9>,[c.i: i in [1..5]]> where c is FieldOfFractions(CoordinateRing(P411));
+  // we spread out the generic fibre computed above ...
+  prgf411 := Scheme(P411,[Numerator(h4(i)): i in DefiningPolynomials(prgf)]);
+  // and throw away junk components
+  prgf411 := rep{Scheme(P411,Basis(x)): x in ProbableRadicalDecomposition(Ideal(prgf411))|Evaluate(DefiningPolynomial(in4),[P411.i: i in [1..5]]) in Basis(x)};
+  prgf411 := Difference(prgf411,Scheme(P411,[P411.i: i in [1,2,3,6]]));
+  
+  // now we spread out the map.
+  to411 := map<in4->prgf411|[P4.i: i in [1..5]] cat dp cat [&+[Evaluate(MonomialCoefficient(e,m),dp[1]/dp[2])*CoordinateRing(P4)!m: m in Monomials(e)]: e in DefiningPolynomials(myf_gf)],[P411.i: i in [1..5]]> where dp is DefiningPolynomials(possible_good);
+
+  // previously we mapped the general fibre to an elliptic curve.
+  in4tow1 := torlpr*to2*ec1to*tow1;
+  cps := Components(in4tow1);
+  "checking that the map is invertible";
+  assert forall{c: c in cps|IsInvertible(c)};
+  // we can just evaluate one at a time, but trying to define a map that
+  // way takes forever
+  /* idp := InverseDefiningPolynomials(cps[1]);
+  for i in [2..#cps] do
+    time idp := [Evaluate(p,InverseDefiningPolynomials(cps[i])): p in idp];
+    idp := [Universe(idp)|i/GCD(idp): i in idp];
+  end for;*/
+
+  // this is the spreading-out of the elliptic curve ...
+  w111 := Scheme(P211,Numerator(h2(DefiningPolynomial(w1))));
+  // and this is the map, based on what we had a few lines above.
+  tow111 := map<prgf411->w111|[h4(i): i in DefiningPolynomials(in4tow1)] cat [P411.i: i in [6..9]]>;
+  // fromw111 := map<w111->prgf411|[h2(i): i in idp] cat [P211.i: i in [4..7]]>;
+  // and to411 was already invertible before.
+  "spreading out the isomorphism of Weierstrass models";
+  // why is it slow for Magma to verify that these are inverses?  It's obvious
+  // to a human.
+  match11 := map<w111->w211|[v^2*w111.1,v^3*w111.2] cat [w111.i: i in [3..7]]> where v is Evaluate(sqrat,[P211.4/P211.5,P211.6/P211.7]);
+  unmatch11 := map<w211->w111|[v^-2*w111.1,v^-3*w111.2] cat [w111.i: i in [3..7]]> where v is Evaluate(sqrat,[P211.4/P211.5,P211.6/P211.7]);
+
+  // finally, let us spell out the birational equivalence.
+  // to do so, we spread out the components of in4tow1 as above.
+  // Apologies for this hideous code; what it is doing is just spreading out
+  // each component one at a time so that they can be recomposed.  I really
+  // should write a general "spreading out" function, but it is slightly
+  // nontrivial to do so.
+  "painfully spelling out the birational equivalence";
+  P311 := ProductProjectiveSpace(Q3,[3,1,1]);
+  h3 := hom<CoordinateRing(AmbientSpace(Domain(cps[2])))->c|hom<Q32->c|c.5/c.6,c.7/c.8>,[c.i: i in [1..4]]> where c is FieldOfFractions(CoordinateRing(P311));
+  newh2 := hom<CoordinateRing(AmbientSpace(Domain(cps[3])))->c|hom<Q32->c|c.4/c.5,c.6/c.7>,[c.i: i in [1..3]]> where c is FieldOfFractions(CoordinateRing(P211));
+  new2h2 := hom<CoordinateRing(AmbientSpace(Codomain(cps[5])))->c|hom<Q32->c|c.4/c.5,c.6/c.7>,[c.i: i in [1..3]]> where c is FieldOfFractions(CoordinateRing(P211));
+  homs := [h4,h3,newh2,newh2,h2];
+  inv_homs := [h3,newh2,newh2,h2,h2];
+  doms11 := [Scheme(P411,[Numerator(h4(i)): i in DefiningPolynomials(Domain(cps[1]))]),Scheme(P311,[Numerator(h3(i)): i in DefiningPolynomials(Domain(cps[2]))])] cat [Scheme(P211,[Numerator(h2(i)): i in DefiningPolynomials(Domain(c))]): c in cps[3..#cps]];
+  for i in [1..5], j in [0..3] do doms11[i] := excise(doms11[i],Scheme(AmbientSpace(doms11[i]),c.(Rank(c)-j))) where c is CoordinateRing(AmbientSpace(doms11[i])); end for;
+  for i in [1..5], j in [0,2] do doms11[i] := excise(doms11[i],Scheme(AmbientSpace(doms11[i]),c.(Rank(c)-j)-c.(Rank(c)-j-1))) where c is CoordinateRing(AmbientSpace(doms11[i])); end for;
+  codoms11 := Append(doms11[2..#doms11],Scheme(P211,[Numerator(h2(i)): i in DefiningPolynomials(Codomain(cps[#cps]))]));
+  for i in [4..7] do codoms11[#codoms11] := excise(codoms11[#codoms11],Scheme(P211,P211.i)); end for;
+  unmatch11 := map<w211->codoms11[#codoms11]|DefiningPolynomials(unmatch11)>;
+  cps11 := [map<doms11[i]->codoms11[i]|[homs[i](p): p in DefiningPolynomials(cps[i])] cat [doms11[i].(Rank(CoordinateRing(AmbientSpace(doms11[i])))+r): r in [-3..0]]>: i in [1..#cps]];
+  inv_cps11 := [map<codoms11[i]->doms11[i]|[inv_homs[i](p): p in InverseDefiningPolynomials(cps[i])] cat [codoms11[i].(Rank(CoordinateRing(AmbientSpace(codoms11[i])))+r): r in [-3..0]]>: i in [#cps..1 by -1]];
+
+  // and so the equivalence is given by composing all the way from imsch
+  // back to im4.  Namely:
+  "checking that we really do have an explicit birational equivalence";
+  explicit_bir := to1111*tow211*unmatch11*&*inv_cps11*map<doms11[1]->in4|InverseDefiningPolynomials(to411)>;
+  assert Type(explicit_bir) eq MapSch;
+  return to411, tow111, match11, to1111, tow211, in4tow1, explicit_bir;
+end function;
+
+// Usage:
+/*
+test(); // this just shows that there is a birational equivalence (15 seconds)
+
+Q3<a,b,c> := FunctionField(Q,3);
+// the next line actually computes it in full detail (about 3 minutes)
+to411, tow111, match11, to1111, tow211, in4tow1, explicit_bir := bir_eq(a,b,c);
+*/
+
+/* This is the start of the code to find the right fibration.
+  // The first step will be to make a good model, which can be done by
+  // doing the 2-uple embedding, projecting away from the images of
+  // the A3 and A4 points, and projecting away from the A3.
+  ls2 := LinearSystem(P3t,2);
+  for i in [[0,-1,1,0],[0,0,1,0]] do
+    ls2 := LinearSystem(ls2,P3t!i);
+  end for;
+  P7t := ProjectiveSpace(Qt,7);
+  to7t := map<k3gf->P7t|Sections(ls2)>;
+  in7t := Image(to7t);
+  to7t := map<k3gf->in7t|Sections(ls2)>;
+
+  P6t := ProjectiveSpace(Qt,6);
+  to6t := map<in7t->P6t|[P7t.i: i in [1..8]|i ne 5]>;
+  in6t := Image(to6t);
+  to6t := map<in7t->in6t|[P7t.i: i in [1..8]|i ne 5]>;
+
+  Qtu<u> := FunctionField(Qt);
+  P1tu := ProjectiveSpace(Qtu,1);
+  k3gfu := ChangeRing(k3gf,Qtu);
+  spts_gfu := [k3_gfu|Eltseq(i): i in sptsgf];
+  ss2 := Setseq(Subsets({1..4},2));
+  ls1s := [LinearSystem(P3t,1): i in ss2];
+  for i in [1..#ss2], j in ss2[i] do ls1s[i] := LinearSystem(ls1s[i],P3t!spts_gfu)[j]); end for;
+  k3gfto1s := {@map<k3gf->P1t|Sections(i)>: i in ls1s@};
+  k3gfto1us := {@map<k3gfu->P1tu|Sections(i)>: i in ls1s@};
+  gf3s := [Curve(Difference((P1u![u,1])@@i,BaseScheme(i))): i in k3gfto1us];
+  jac3s := [Jacobian(GenusOneModel(RemoveLinearRelations(i))): i in gf3s];
+  c3s := {@@};
+  for i in [1..4] do
+    li := LocalInformation(jac3s[i]);
+    for l in li do
+      if l[5] ne KodairaSymbol("I1") then
+        min := Qt!Minimum(l[1]);
+        p1pt := (min eq 1/Qt.1 select P1![1,0] else P1![Roots(Numerator(min))[1,1]]);
+        cps := PrimeComponents(p1pt@@k3gfto1us[i]);
+        c3s join:= {@x: x in cps@};
+      end if; end for;
+  end for;
+  c3s join:= {@x: x in PrimeComponents(TangentCone(k3gf!i) meet k3gf), i in sptsgf|Dimension(x) eq 1@};
+
+
+*/
+
+/* more of this
+   ak3 := RemoveLinearRelations((P1![5,1])@@possible_good);
+   ak3 := Surface(P3,DefiningPolynomial(rep{x: x in PrimaryComponents(ak3)|Degree(x) eq 4}));
+   ls2 := LinearSystem(P3,2);
+   for i in [[0,-1,1,0],[0,0,1,0]] do ls2 := LinearSystem(ls2,P3!i); end for;
+   P7 := ProjectiveSpace(Q,7);
+   to7 := map<ak3->P7|Sections(ls2)>;
+   in7 := Image(to7);
+   to7 := map<ak3->in7|Sections(ls2)>;
+   ss7 := SingularSubscheme(in7);
+   pcss7 := PrimaryComponents(ss7);
+   P6 := ProjectiveSpace(Q,6);
+   to6 := map<in7->P6|[P7.i: i in [1..8]|i ne 5]>;
+   in6 := Image(to6);
+   to6 := map<in7->in6|[P7.i: i in [1..8]|i ne 5]>;
+
+   ss2 := Setseq(Subsets({1..4},2));
+   ls1s := [LinearSystem(P3,1): i in ss2];
+   for i in [1..#ss2], j in ss2[i] do ls1s[i] := LinearSystem(ls1s[i],P3!SingularPoints(ak3)[j]); end for;
+   ak3to1s := {@map<ak3->P1|Sections(i)>: i in ls1s@};
+   ak3t := ChangeRing(ak3,Qt);
+   ak3to1ts := {@map<ak3t->P1t|Sections(i)>: i in ls1s@};
+   gf3s := [Curve(Difference((P1t![t,1])@@i,BaseScheme(i))): i in ak3to1ts];
+   jac3s := [Jacobian(GenusOneModel(RemoveLinearRelations(i))): i in gf3s];
+   c3s := {@@};
+   for i in [1..4] do
+   li := LocalInformation(jac3s[i]);
+   for l in li do if l[5] ne KodairaSymbol("I1") then
+   min := Qt!Minimum(l[1]);
+   p1pt := (min eq 1/Qt.1 select P1![1,0] else P1![Roots(Numerator(min))[1,1]]);
+   cps := PrimeComponents(p1pt@@ak3to1s[i]);
+   c3s join:= {@x: x in cps@};
+   end if; end for;
+   end for;
+   c3s join:= {@x: x in PrimeComponents(TangentCone(ak3!i) meet ak3), i in SingularPoints(ak3)|Dimension(x) eq 1@};
+   c7s := {@to7(ak3 meet i): i in c3s@};
+   c7s join:= {@x: x in PrimeComponents(TangentCone(in7!i) meet in7), i in SingularPoints(in7)|Dimension(x) eq 1@};
+   c6s := {@to6(in7 meet i): i in c7s@};
+   c6s join:= {@x: x in PrimeComponents(TangentCone(in6!i) meet in6), i in SingularPoints(in6)|Dimension(x) eq 1@};
+   c6s := {@Curve(x): x in c6s|Dimension(x) eq 1@};
+
+   load "k3pic.mag";
+   blowups,spts,degs := make_blowups(in6);
+   mat,hypvec := picmat(in6,blowups,spts,degs,c6s);
+   Z28,Z16,to16,cls := reduce_mat(mat);
+   hyp := to16(hypvec);
+   el := esslat(Z16.8+Z16.9,Z16.2,Z16);
+   nb := neighbours(el:thorough);
+   chs := list_chains(cls);
+   fibcl,ancl,dncl,encl,loops,dns,ens := ade_cls(chs,cls:silent);
+// it should be possible to find a fibration that is invariant under 
+// permutation of a, b, c, which might make for a more "canonical" 
+// identification between the two sides.
+*/

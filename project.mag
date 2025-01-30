@@ -1,0 +1,70 @@
+// project from a point, in a more sensible way
+function project(sch,pt: amb := false)
+  error if not IsOrdinaryProjective(sch), "only applies to projective schemes";
+  F := BaseField(sch);
+  Pn := AmbientSpace(sch);
+  dim := Dimension(Pn);
+  if amb cmpeq false then amb := ProjectiveSpace(F,dim-1); end if;
+  error if not (IsOrdinaryProjective(amb) and IsAmbient(amb) and Dimension(amb) eq dim-1 and BaseRing(amb) eq F), "invalid ambient";
+  ind := rep{x: x in [dim+1..1 by -1]|pt[x] ne 0};
+  autpn := map<Pn->Pn|[Pn.i-pt[i]*Pn.ind: i in [1..ind-1]] cat [Pn.j: j in Append([ind+1..dim+1],ind)]>;
+  autsch := sch@@Inverse(autpn);
+  ei := EasyIdeal(Ideal(autsch));
+  eli := EliminationIdeal(ei,{1..dim});
+
+  inn1 := Scheme(amb,ideal<CoordinateRing(amb)|[Evaluate(i,Append([amb.j: j in [1..dim]],0)): i in Basis(eli)]>);
+  if Type(sch) eq Crv then inn1 := Curve(inn1);
+  elif Type(sch) eq Srfc and Dimension(inn1) eq 2 then inn1 := Surface(amb,Ideal(inn1));
+  end if;
+  ton1 := map<sch->inn1|DefiningPolynomials(autpn)[1..dim]>;
+  return inn1,ton1;
+end function;
+
+// map by linear equations
+// works better if there are no linear equations in the ideal of the scheme
+function map_lin(sch,lins: amb := false)
+  r := Rank(CoordinateRing(AmbientSpace(sch)));
+  mat := Matrix([[MonomialCoefficient(l,sch.i): i in [1..r]]: l in lins]);
+  repeat
+    s := RandomSubset({1..r},r-#lins);
+    mats := VerticalJoin(mat,Matrix([v.i: i in s])) where v is VectorSpace(BaseField(sch),r);
+  until Rank(mats) eq r;
+  Pn := AmbientSpace(sch);
+  autpn := Automorphism(Pn,Transpose(mats));
+  schb := sch@@Inverse(autpn);
+  if amb cmpeq false then amb := ProjectiveSpace(BaseField(sch),#lins-1); end if;
+  error if not (IsOrdinaryProjective(amb) and IsAmbient(amb) and Dimension(amb) eq #lins-1 and BaseRing(amb) eq BaseField(sch)), "invalid ambient";
+  eli := EliminationIdeal(Ideal(schb),{1..#lins});
+  inpd := Scheme(amb,[Evaluate(i,[amb.j: j in [1..#lins]] cat [0: j in [#lins+1..r]]): i in Basis(eli)]);
+  if ISA(Type(sch),Crv) and Dimension(inpd) eq 1 then
+    inpd := Curve(inpd);
+  elif ISA(Type(sch),Srfc) and Dimension(inpd) eq 2 then
+    inpd := Surface(amb,Ideal(inpd));
+  end if;
+  topd := map<sch->inpd|lins>;
+  return inpd,topd;
+end function;
+
+// try to find the image of a map
+function try_image(f,goal_degs,goal_bound: verbose := false, simplify := false, dim := Dimension(Domain(f)))
+  rats := {@a/b: a in [-5..5], b in [1..5]@};
+  dom := Domain(f);
+  degs := [Degree(dom.i): i in [1..Rank(CoordinateRing(AmbientSpace(dom)))]];
+  min_deg := Min([x: x in Set(degs)|#[i: i in degs|x eq i] ge dim+1]);
+  inds := {x: x in [1..#degs]|degs[x] eq min_deg};
+  pairs := Subsets(inds,2);
+  cod := AmbientSpace(Codomain(f));
+  emp := EmptySubscheme(cod);
+  if simplify then f := map<AmbientSpace(dom)->Codomain(f)|AllDefiningPolynomials(f)>; end if;
+  repeat
+    fin := Scheme(dom,[dom.Min(p)-Random(rats)*dom.Max(p): p in RandomSubset(pairs,dim)]);
+    if simplify then fin := &join PrimaryComponents(fin); end if;
+    emp join:= f(fin);
+    // emp join:= f(Scheme(dom,[&+[Random(rats)*dom.i: i in inds]: j in [1..dim]]));
+    ptod := [x: x in DefiningPolynomials(emp)|Degree(x) le goal_bound];
+    dtod := {*Degree(i): i in ptod*};
+    if verbose then dtod; end if;
+  until dtod eq goal_degs;
+  image := Scheme(cod,ptod);
+  return image;
+end function;

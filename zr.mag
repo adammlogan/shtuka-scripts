@@ -1,0 +1,17 @@
+// function to write down the affine equations for Z^r
+function zr_aff(n)
+  Qn := FunctionField(Q,n);
+  Qnm := FunctionField(Qn,2*n-3);
+  Qnmt := PolynomialRing(Qnm);
+  if IsOdd(n) then
+    mat := Matrix(2,2,[(Qnmt.1-1)*Qnmt!(Append([Qnm.i: i in [1..n div 2]],1)),Qnm.(n div 2 + 1)*Qnmt.1*Qnmt!(Append([Qnm|Qnm.i: i in [n div 2+2..n-1]],1)),(Qnmt.1-1)*Qnmt!(Append([Qnm|Qnm.i: i in [n..n+n div 2-2]],1)),(Qnmt.1-1)*Qnmt!(Append([Qnm.i: i in [n+n div 2-1..2*n-3]],1))]);
+  else
+    mat := Matrix(2,2,[Qnmt!(Append([Qnm.i: i in [1..n div 2]],1)),Qnm.(n div 2 + 1)*Qnmt.1*Qnmt!(Append([Qnm|Qnm.i: i in [n div 2+2..n-1]],1)),(Qnmt.1-1)*Qnmt!(Append([Qnm|Qnm.i: i in [n..n+n div 2-3]],1)),Qnmt!(Append([Qnm.i: i in [n+n div 2-2..2*n-3]],1))]);
+  end if;
+
+  det := Qnmt!(Determinant(mat)/(Qnmt.1-1)^(n mod 2));
+  Am := Spec(Parent(Numerator(Qnm.1)));
+  sch := Scheme(Am,[Evaluate(det,Qn.i): i in [1..n]]);
+  // assert Dimension(sch) eq n-3;
+  return sch, mat;
+end function;

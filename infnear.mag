@@ -1,0 +1,108 @@
+// function to create infinitely near points
+function inp(c,pt,ord)
+  ap := rep{AffinePatch(c,x): x in [1..NumberOfAffinePatches(c)]|pt in AffinePatch(c,x)};
+  ptap := ap!pt;
+  An := AmbientSpace(ap);
+  cr := CoordinateRing(An);
+  br := BaseRing(cr);
+  ps_cr := PowerSeriesRing(cr);
+  ps_br := PowerSeriesRing(br);
+
+  inpseq := [[i+O(ps_br.1)^1: i in Eltseq(ptap)]];
+  for i in [1..ord] do
+    newptseq := [&+[ps_cr|Coefficient(inpseq[i,n],j)*ps_cr.1^j: j in [0..i-1]]+ap.n*ps_cr.1^i+O(ps_cr.1^(i+1)): n in [1..Dimension(An)]];
+    vals := [Evaluate(i,newptseq): i in DefiningPolynomials(ap)];
+    assert forall{x: x in [0..i-1], v in vals|Coefficient(v,x) eq 0};
+    eqs := [Coefficient(v,i): v in vals];
+    mat := Matrix([[MonomialCoefficient(e,ap.i): e in eqs]: i in [1..Dimension(An)]]);
+    vec := Vector([MonomialCoefficient(e,1): e in eqs]);
+    ker := Kernel(mat);
+    assert Dimension(ker) eq 1;
+    sol := (vec ne 0 select Solution(mat,-vec) else ker.1);
+    newinp := [&+[ps_br|Coefficient(inpseq[i,n],j)*ps_br.1^j: j in [0..i-1]]+sol[n]*ps_br.1^i+O(ps_br.1^(i+1)): n in [1..Dimension(An)]];
+    assert forall{i: i in DefiningPolynomials(ap)|IsWeaklyZero(Evaluate(i,newinp))};
+    Append(~inpseq,newinp);
+  end for;
+
+  inps := [c(ps_br)!(ap(ps_br)!i): i in inpseq];
+  return inps;
+end function;
+
+// map a point using infinitely near points
+function map_inf_near(c,pt,m: verbose := false)
+  deg := 1;
+  repeat
+    inps := inp(c,pt,deg);
+    try
+      iminp := [Evaluate(i,Eltseq(inps[#inps])): i in DefiningPolynomials(m)];
+      if exists{c: c in iminp|not IsWeaklyZero(c)} then
+	d := rep{i: i in [0..deg]|exists{j: j in [1..#iminp]|Degree(Codomain(m).j) eq 1 and Coefficient(iminp[j],i) ne 0}};
+	imp := Codomain(m)![Coefficient(iminp[i],d*Degree(Codomain(m).i)): i in [1..#Eltseq(iminp)]];
+	if verbose then printf "\n"; end if;
+	return imp;
+      end if;
+      catch e if verbose then printf "."; end if; end try;
+    deg +:= 1;
+  until false;
+end function;
+
+// given a point on a curve in P^n, find the hyperplane with contact of
+// order n
+function osc_hyperplane(c,pt)
+  error if IsSingular(c!pt), "point is singular";
+  Pn := AmbientSpace(c);
+  dim := Dimension(Pn);
+  error if not IsProjective(Pn), "ambient must be projective";
+  error if Gradings(Pn) ne [[1: i in [1..dim+1]]], "ambient must be ordinary projective";
+  inf_near := inp(c,pt,dim-1);
+  mat := Matrix([[Coefficient(i,j): j in [0..dim-1]]: i in Eltseq(inf_near[dim])]);
+  ker := Kernel(mat);
+  assert Dimension(ker) eq 1;
+  hyp := Scheme(Pn,&+[(ker.1)[i]*Pn.i: i in [1..dim+1]]);
+  // assert exists{p: p in PrimaryComponents(c meet hyp)|pt in p and Degree(p) ge dim};
+  return hyp;
+end function;
+
+// given a curve in P^n, define the map to the dual P^n that takes a point to
+// the hyperplane with contact of order n
+function gauss_map(c)
+  Pn := AmbientSpace(c);
+  dim := Dimension(Pn);
+  gp := GenericPoint(c);
+  ff := FunctionField(c);
+  cff := ChangeRing(c,ff);
+  gpff := cff!Eltseq(gp);
+  gp_osc := osc_hyperplane(cff,gpff);
+  ffhom := hom<ff->FieldOfFractions(CoordinateRing(Pn))|[Pn.i/Pn.(dim+1): i in [1..dim]]>;
+  gm := map<c->Pn|[ffhom(MonomialCoefficient(DefiningPolynomial(gp_osc),Pn.i)): i in [1..dim+1]]>;
+  return gm;
+end function;
+
+// given a genus-1 curve in P^n, find the scheme of points p such that (n+1)p
+// = the hyperplane class
+function divn(c)
+  Pn := AmbientSpace(c);
+  dim := Dimension(Pn);
+  gp := GenericPoint(c);
+  ff := FunctionField(c);
+  cff := ChangeRing(c,ff);
+  gpff := cff!Eltseq(gp);
+  ffhom := hom<ff->FieldOfFractions(CoordinateRing(Pn))|[Pn.i/Pn.(dim+1): i in [1..dim]]>;
+  gp_osc := osc_hyperplane(cff,gpff);
+  c_hyp := cff meet gp_osc;
+  for i in [1..dim] do
+    c_hyp := Difference(c_hyp,Cluster(AmbientSpace(cff)!gpff));
+  end for;
+  assert Degree(c_hyp) eq 1 and Dimension(c_hyp) eq 0;
+  res_pt := RationalPoints(c_hyp)[1];
+  mult_eqs := [ffhom(i): i in Eltseq(res_pt)];
+  mult_eqs := [Numerator(x*lcm): x in mult_eqs] where lcm is LCM([Denominator(i): i in mult_eqs]);
+  // _ := map<c->c|mult_map_eqs;
+  fix_mult := Scheme(c,[mult_eqs[i]*c.j-mult_eqs[j]*c.i: i,j in [1..dim]|i lt j]);
+  base := Scheme(c,mult_eqs);
+  fix := Difference(fix_mult,base);
+  assert Degree(fix) eq (dim+1)^2;
+  return fix;
+end function;
+
+  

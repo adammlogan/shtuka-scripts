@@ -1,0 +1,73 @@
+function blowup(v,pt)
+  Pn := AmbientSpace(v);
+  dpn := Dimension(Pn);
+  prp := ProductProjectiveSpace(BaseField(v),[dpn,dpn-1]);
+  tobl := map<v->prp|[v.i: i in [1..dpn+1]] cat DefiningPolynomials(Cluster(Pn!pt))>;
+  vbl := tobl(v);
+  tobl := map<v->vbl|DefiningPolynomials(tobl)>;
+  frombl := map<vbl->v|[vbl.i: i in [1..dpn+1]]>;
+  Pnm1 := ProjectiveSpace(BaseField(v),dpn-1);
+  pr2 := map<vbl->Pnm1|[vbl.i: i in [dpn+2..2*dpn+1]]>;
+  ed := pt@@frombl;
+  return vbl,ed,frombl,pr2;
+end function;
+
+function excise(x,y:verbose := false)
+  repeat
+    x0 := x;
+    x := Difference(x,y);
+    if verbose then printf "."; end if;
+  until x0 eq x;
+  return x;
+end function;
+
+function reduce_mat(mat)
+  r := Rank(mat);
+  nr := Nrows(mat);
+  ker := Kernel(mat);
+  repeat rs := RandomSubset({1..nr},nr-r);
+  until Determinant(Matrix([[k[j]: k in Basis(ker)]: j in rs])) in [1,-1];
+  keep := [x: x in [1..nr]|x notin rs];
+  matsmall := Matrix(r,r,[mat[i,j]: i,j in keep]);
+
+  Zbig := RSpace(Z,nr,mat);
+  Zsmall := RSpace(Z,r,matsmall);
+  tosmall := hom<Zbig->Zsmall|[Solution(Matrix([mat[i]: i in keep]),r): r in Rows(mat)]>;
+  cls := [tosmall(Zbig.i): i in [1..nr]|mat[i,i] eq -2];
+  return Zbig,Zsmall,tosmall,cls;
+end function;
+
+function chain(n)
+  n_chain := [n];
+  while n_chain[#n_chain] gt 1 do
+    Append(~n_chain,IsEven(n_chain[#n_chain]) select n_chain[#n_chain] div 2 else n_chain[#n_chain]-1);
+  end while;
+  Reverse(~n_chain);
+  return n_chain;
+end function;
+
+function multiple_curve(c,n,spts,k3)
+  if n eq 1 then return c; end if;
+  ch := chain(n);
+  
+  id := Ideal(c);
+  for i in [2..#ch] do
+    if ch[i]-ch[i-1] eq 1 then
+      id := EasyIdeal(id*Ideal(c)+Ideal(k3));
+    else
+      id := EasyIdeal(id^2+Ideal(k3));
+    end if;
+
+    for p in spts do
+      if p in c then
+	id := Saturation(id,Ideal(Cluster(AmbientSpace(k3)!p)));
+      end if;
+    end for;
+  end for;
+
+  id := Saturation(id,IrrelevantIdeal(AmbientSpace(k3)));
+  assert IsPrimary(id);
+  cn := Scheme(k3,Basis(id));
+  return cn;
+end function;
+
